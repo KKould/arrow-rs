@@ -602,7 +602,7 @@ impl<'a, W: Write + Send> SerializedRowGroupWriter<'a, W> {
 
     /// Returns the next column writer, if available, using the factory function;
     /// otherwise returns `None`.
-    pub(crate) fn next_column_with_factory<'b, F, C>(&'b mut self, factory: F) -> Result<Option<C>>
+    pub fn next_column_with_factory<'b, F, C>(&'b mut self, factory: F) -> Result<Option<C>>
     where
         F: FnOnce(
             ColumnDescPtr,
