@@ -465,9 +465,14 @@ impl<'a, E: ColumnValueEncoder> GenericColumnWriter<'a, E> {
         // TODO: find out why we don't account for size of levels when we estimate page
         // size.
 
-        let num_levels = match def_levels {
-            Some(def_levels) => def_levels.len(),
-            None => values.len(),
+        let num_levels = def_levels
+            .map(|levels| levels.len())
+            .unwrap_or_default()
+            .max(rep_levels.map(|levels| levels.len()).unwrap_or_default());
+        let num_levels = if num_levels > 0 {
+            num_levels
+        } else {
+            value_indices.map_or(values.len(), |indices| indices.len())
         };
 
         if let Some(min) = min {
@@ -533,6 +538,28 @@ impl<'a, E: ColumnValueEncoder> GenericColumnWriter<'a, E> {
         self.write_batch_internal(values, None, def_levels, rep_levels, None, None, None)
     }
 
+    /// Writes values at the provided indices with definition and repetition levels.
+    ///
+    /// This is equivalent to [`Self::write_batch`], except that values are gathered from
+    /// `values` using `indices` instead of being read densely from the start of `values`.
+    pub fn write_batch_with_indices(
+        &mut self,
+        values: &E::Values,
+        indices: &[usize],
+        def_levels: Option<&[i16]>,
+        rep_levels: Option<&[i16]>,
+    ) -> Result<usize> {
+        self.write_batch_internal(
+            values,
+            Some(indices),
+            def_levels,
+            rep_levels,
+            None,
+            None,
+            None,
+        )
+    }
+
     /// Writer may optionally provide pre-calculated statistics for use when computing
     /// chunk-level statistics
     ///
@@ -552,6 +579,32 @@ impl<'a, E: ColumnValueEncoder> GenericColumnWriter<'a, E> {
         self.write_batch_internal(
             values,
             None,
+            def_levels,
+            rep_levels,
+            min,
+            max,
+            distinct_count,
+        )
+    }
+
+    /// Writes values at the provided indices with pre-calculated chunk-level statistics.
+    ///
+    /// See [`Self::write_batch_with_indices`] for indexed value writes, and
+    /// [`Self::write_batch_with_statistics`] for the statistics behavior.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_batch_with_indices_and_statistics(
+        &mut self,
+        values: &E::Values,
+        indices: &[usize],
+        def_levels: Option<&[i16]>,
+        rep_levels: Option<&[i16]>,
+        min: Option<&E::T>,
+        max: Option<&E::T>,
+        distinct_count: Option<u64>,
+    ) -> Result<usize> {
+        self.write_batch_internal(
+            values,
+            Some(indices),
             def_levels,
             rep_levels,
             min,
@@ -1698,6 +1751,58 @@ mod tests {
     }
 
     #[test]
+    fn test_column_writer_write_batch_with_indices() {
+        let mut file = tempfile::tempfile().unwrap();
+        let mut write = TrackedWrite::new(&mut file);
+        let page_writer = Box::new(SerializedPageWriter::new(&mut write));
+        let props = Default::default();
+        let mut writer = get_test_column_writer::<Int32Type>(page_writer, 1, 0, props);
+
+        let source_values = [10, 11, 12, 13];
+        let indices = [2, 0, 3];
+        let def_levels = [1, 0, 1, 1];
+        let values_written = writer
+            .write_batch_with_indices(&source_values, &indices, Some(&def_levels), None)
+            .unwrap();
+        assert_eq!(values_written, indices.len());
+        let result = writer.close().unwrap();
+
+        drop(write);
+
+        let props = ReaderProperties::builder()
+            .set_backward_compatible_lz4(false)
+            .build();
+        let page_reader = Box::new(
+            SerializedPageReader::new_with_properties(
+                Arc::new(file),
+                &result.metadata,
+                result.rows_written as usize,
+                None,
+                Arc::new(props),
+            )
+            .unwrap(),
+        );
+        let mut reader = get_test_column_reader::<Int32Type>(page_reader, 1, 0);
+        let mut actual_values = Vec::with_capacity(source_values.len());
+        let mut actual_def_levels = Vec::with_capacity(def_levels.len());
+
+        let (_, values_read, levels_read) = reader
+            .read_records(
+                def_levels.len(),
+                Some(&mut actual_def_levels),
+                None,
+                &mut actual_values,
+            )
+            .unwrap();
+
+        assert_eq!(values_read, indices.len());
+        assert_eq!(levels_read, def_levels.len());
+        assert_eq!(&actual_values[..values_read], &[12, 10, 13]);
+        assert_eq!(&actual_def_levels[..levels_read], &def_levels);
+        assert_eq!(result.rows_written, def_levels.len() as u64);
+    }
+
+    #[test]
     fn test_column_writer_write_only_one_dictionary_page() {
         let page_writer = get_test_page_writer();
         let props = Default::default();
@@ -2253,6 +2358,41 @@ mod tests {
             }
         } else {
             panic!("metadata missing statistics");
+        }
+    }
+
+    #[test]
+    fn test_column_writer_write_batch_with_indices_and_statistics() {
+        let page_writer = get_test_page_writer();
+        let props = Arc::new(
+            WriterProperties::builder()
+                .set_statistics_enabled(EnabledStatistics::Chunk)
+                .build(),
+        );
+        let mut writer = get_test_column_writer::<Int32Type>(page_writer, 0, 0, props);
+        writer
+            .write_batch_with_indices_and_statistics(
+                &[1, 2, 3, 4],
+                &[2, 0],
+                None,
+                None,
+                Some(&-5),
+                Some(&99),
+                Some(2),
+            )
+            .unwrap();
+
+        let r = writer.close().unwrap();
+        assert_eq!(r.rows_written, 2);
+
+        let stats = r.metadata.statistics().unwrap();
+        assert_eq!(stats.null_count_opt(), Some(0));
+        assert_eq!(stats.distinct_count_opt().unwrap_or(0), 2);
+        if let Statistics::Int32(stats) = stats {
+            assert_eq!(stats.min_opt().unwrap(), &-5);
+            assert_eq!(stats.max_opt().unwrap(), &99);
+        } else {
+            panic!("expecting Statistics::Int32");
         }
     }
 

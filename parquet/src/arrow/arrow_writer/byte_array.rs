@@ -416,6 +416,7 @@ impl DictEncoder {
     }
 }
 
+/// Specialized [`ByteArray`] encoder for Arrow arrays.
 pub struct ByteArrayEncoder {
     fallback: FallbackEncoder,
     dict_encoder: Option<DictEncoder>,

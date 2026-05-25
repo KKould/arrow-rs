@@ -36,7 +36,6 @@ use arrow_schema::{
 use super::schema::{add_encoded_arrow_schema_to_metadata, decimal_length_from_precision};
 
 use crate::arrow::ArrowSchemaConverter;
-use crate::arrow::arrow_writer::byte_array::ByteArrayEncoder;
 use crate::column::page::{CompressedPage, PageWriteSpec, PageWriter};
 use crate::column::page_encryption::PageEncryptor;
 use crate::column::writer::encoder::ColumnValueEncoder;
@@ -57,6 +56,8 @@ use levels::{ArrayLevels, calculate_array_levels};
 
 mod byte_array;
 mod levels;
+
+pub use byte_array::ByteArrayEncoder;
 
 /// Encodes [`RecordBatch`] to parquet
 ///
