@@ -1273,6 +1273,31 @@ impl ArrowColumnWriterFactory {
     }
 }
 
+/// Streams a leaf column into a low-level [`ColumnWriter`], reusing the Arrow→Parquet
+/// dispatch (`write_leaf`) without buffering a whole column chunk.
+///
+/// Unlike [`ArrowColumnWriter`], which wires a buffering page writer, the caller supplies
+/// the `ColumnWriter` (e.g. obtained via
+/// [`SerializedRowGroupWriter::next_column_with_factory`]), so pages are flushed straight
+/// to the file sink as they fill.
+pub fn write_leaf_column(writer: &mut ColumnWriter<'_>, leaf: &ArrowLeafColumn) -> Result<usize> {
+    write_leaf(writer, leaf.0.array().as_ref(), &leaf.0)
+}
+
+/// Streams a leaf column into a low-level [`GenericColumnWriter`] using the specialized
+/// [`ByteArrayEncoder`], reusing the Arrow→Parquet dispatch (`write_primitive`).
+///
+/// The values are taken from the leaf's own array (as `ArrowColumnWriter` does
+/// internally), so callers that cannot access the private `ArrowLeafColumn` contents
+/// can still drive the byte-array encoder. See [`write_leaf_column`] for the streaming
+/// rationale.
+pub fn write_byte_array_column(
+    writer: &mut GenericColumnWriter<ByteArrayEncoder>,
+    leaf: &ArrowLeafColumn,
+) -> Result<usize> {
+    write_primitive(writer, leaf.0.array().as_ref(), &leaf.0)
+}
+
 fn write_leaf(
     writer: &mut ColumnWriter<'_>,
     column: &dyn arrow_array::Array,
