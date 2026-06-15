@@ -773,6 +773,18 @@ impl ArrowColumnChunk {
     ) -> Result<()> {
         writer.append_column(&self.data, self.close)
     }
+
+    /// Destructure into the already-encoded, compressed column-chunk bytes (the `Bytes`
+    /// fragments that, concatenated in order, form this column chunk's on-disk bytes) and the
+    /// [`ColumnCloseResult`] carrying its metadata.
+    ///
+    /// This lets a caller assemble a parquet file itself — pushing the returned `Bytes` straight
+    /// into its own output buffer and remapping the offsets in `ColumnCloseResult::metadata` —
+    /// without routing the data through [`SerializedRowGroupWriter::append_column`], which copies
+    /// the bytes via `std::io::copy`.
+    pub fn into_parts(self) -> (Vec<Bytes>, ColumnCloseResult) {
+        (self.data.data, self.close)
+    }
 }
 
 /// Encodes [`ArrowLeafColumn`] to [`ArrowColumnChunk`]
