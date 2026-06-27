@@ -952,6 +952,17 @@ impl ArrowColumnWriter {
         Ok(())
     }
 
+    /// Force a page boundary at the current position by finalizing the buffered values into a
+    /// data page. No-op when nothing is buffered. Used to align page boundaries to fixed row
+    /// strides; the resulting page's `first_row_index` is recoverable from the column's offset
+    /// index after [`Self::close`].
+    pub fn flush_data_page(&mut self) -> Result<()> {
+        match &mut self.writer {
+            ArrowColumnWriterImpl::ByteArray(c) => c.flush_data_page(),
+            ArrowColumnWriterImpl::Column(c) => c.flush_data_page(),
+        }
+    }
+
     /// Close this column returning the written [`ArrowColumnChunk`]
     pub fn close(self) -> Result<ArrowColumnChunk> {
         let close = match self.writer {

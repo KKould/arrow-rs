@@ -109,6 +109,13 @@ impl ColumnWriter<'_> {
         downcast_writer!(self, typed, typed.add_data_page())
     }
 
+    /// Force the currently buffered values to be finalized into a data page, creating a page
+    /// boundary at the current position. No-op when no values are buffered, so it is safe to call
+    /// at arbitrary positions (e.g. fixed row strides). Pages still begin on row boundaries.
+    pub fn flush_data_page(&mut self) -> Result<()> {
+        downcast_writer!(self, typed, typed.flush_data_page())
+    }
+
     /// Close this [`ColumnWriter`], returning the metadata for the column chunk.
     pub fn close(self) -> Result<ColumnCloseResult> {
         downcast_writer!(self, typed, typed.close())
@@ -1059,6 +1066,17 @@ impl<'a, E: ColumnValueEncoder> GenericColumnWriter<'a, E> {
             }
             stats => stats,
         }
+    }
+
+    /// Force the currently buffered values to be finalized into a data page, creating a page
+    /// boundary at the current position. No-op when no values are buffered, so it is safe to call
+    /// at arbitrary row strides. The flushed page's location is recorded in the offset index, so
+    /// the page's `first_row_index` can be recovered from [`ColumnCloseResult::offset_index`].
+    pub fn flush_data_page(&mut self) -> Result<()> {
+        if self.page_metrics.num_buffered_values == 0 {
+            return Ok(());
+        }
+        self.add_data_page()
     }
 
     /// Adds data page.
