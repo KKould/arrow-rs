@@ -89,6 +89,7 @@ pub trait ArrayReader: Send {
     // TODO: this function is never used, and the trait is not public. Perhaps this should be
     // removed.
     #[allow(dead_code)]
+    /// Returns this reader as [`Any`] for downcasting.
     fn as_any(&self) -> &dyn Any;
 
     /// Returns the arrow type of this array reader.

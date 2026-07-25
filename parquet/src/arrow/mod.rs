@@ -180,6 +180,8 @@
 //! ```
 
 experimental!(mod array_reader);
+pub use self::array_reader::ArrayReader;
+pub use self::array_reader::ArrayReaderBuilder;
 pub mod arrow_reader;
 pub mod arrow_writer;
 mod buffer;

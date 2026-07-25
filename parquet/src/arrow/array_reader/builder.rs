@@ -34,7 +34,7 @@ use crate::arrow::array_reader::{
     make_byte_array_dictionary_reader, make_byte_array_reader,
 };
 use crate::arrow::arrow_reader::metrics::ArrowReaderMetrics;
-use crate::arrow::schema::{ParquetField, ParquetFieldType, VirtualColumnType};
+use crate::arrow::schema::{FieldLevels, ParquetField, ParquetFieldType, VirtualColumnType};
 use crate::basic::Type as PhysicalType;
 use crate::data_type::{BoolType, DoubleType, FloatType, Int32Type, Int64Type, Int96Type};
 use crate::errors::{ParquetError, Result};
@@ -99,6 +99,7 @@ pub struct ArrayReaderBuilder<'a> {
 }
 
 impl<'a> ArrayReaderBuilder<'a> {
+    /// Creates a builder for the provided row groups with the given metrics collector.
     pub fn new(row_groups: &'a dyn RowGroups, metrics: &'a ArrowReaderMetrics) -> Self {
         Self {
             row_groups,
@@ -132,6 +133,15 @@ impl<'a> ArrayReaderBuilder<'a> {
             .unwrap_or_else(|| make_empty_array_reader(self.num_rows()));
 
         Ok(reader)
+    }
+
+    /// Create an [`ArrayReader`] from precomputed field levels.
+    #[allow(dead_code)]
+    pub fn build_array_reader_from_levels(
+        &self,
+        levels: &FieldLevels,
+    ) -> Result<Box<dyn ArrayReader>> {
+        self.build_array_reader(levels.levels.as_ref(), &ProjectionMask::all())
     }
 
     /// Return the total number of rows
