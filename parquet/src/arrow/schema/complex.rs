@@ -365,7 +365,6 @@ impl Visitor {
             self.dispatch(map_value, context)?
         };
 
-        // Need both columns to be projected
         match (maybe_key, maybe_value) {
             (Some(mut key), Some(mut value)) => {
                 let key_field = Arc::new(
@@ -396,7 +395,43 @@ impl Visitor {
                     },
                 }))
             }
-            _ => Ok(None),
+            (projected_key, projected_value) => {
+                let (mut child, parquet_child, arrow_child) =
+                    match (projected_key, projected_value) {
+                        (Some(child), None) => (child, map_key, arrow_key),
+                        (None, Some(child)) => (child, map_value, arrow_value),
+                        (None, None) => return Ok(None),
+                        _ => unreachable!(),
+                    };
+                let child_field = Arc::new(convert_field(
+                    parquet_child,
+                    &mut child,
+                    arrow_child,
+                )?);
+                let entry_field = Arc::new(Field::new_struct(
+                    map_key_value.name(),
+                    [child_field],
+                    false,
+                ));
+                let entry = ParquetField {
+                    rep_level,
+                    def_level: if nullable { def_level + 2 } else { def_level + 1 },
+                    nullable: false,
+                    arrow_type: entry_field.data_type().clone(),
+                    field_type: ParquetFieldType::Group {
+                        children: vec![child],
+                    },
+                };
+                Ok(Some(ParquetField {
+                    rep_level,
+                    def_level,
+                    nullable,
+                    arrow_type: DataType::List(entry_field),
+                    field_type: ParquetFieldType::Group {
+                        children: vec![entry],
+                    },
+                }))
+            }
         }
     }
 

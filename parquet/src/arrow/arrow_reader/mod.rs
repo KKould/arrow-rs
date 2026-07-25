@@ -1357,6 +1357,34 @@ impl Iterator for ParquetRecordBatchReader {
 }
 
 impl ParquetRecordBatchReader {
+    /// Returns the next non-empty record batch paced by a physical data page.
+    ///
+    /// This API is intended for unfiltered single-leaf projections. It preserves the existing
+    /// row-driven iterator while allowing callers to couple decoding to page-paced streaming I/O.
+    pub fn next_page_batch(&mut self) -> Result<Option<RecordBatch>> {
+        if !matches!(
+            self.read_plan.row_selection_cursor_mut(),
+            RowSelectionCursor::All
+        ) {
+            return Err(general_err!(
+                "page-paced record batches do not support row selection"
+            ));
+        }
+
+        let rows = self.array_reader.read_page_records()?;
+        let array = self.array_reader.consume_batch()?;
+        let struct_array = array.as_struct_opt().ok_or_else(|| {
+            ArrowError::ParquetError("Struct array reader should return struct array".to_string())
+        })?;
+        if struct_array.len() != rows {
+            return Err(general_err!(
+                "page-paced array reader reported {rows} rows but produced {}",
+                struct_array.len()
+            ));
+        }
+        Ok((rows != 0).then(|| RecordBatch::from(struct_array)))
+    }
+
     /// Returns the next `RecordBatch` from the reader, or `None` if the reader
     /// has reached the end of the file.
     ///
@@ -4853,6 +4881,62 @@ pub(crate) mod tests {
             .unwrap();
 
         assert_eq!(&written.slice(0, 8), &read[0]);
+    }
+
+    #[test]
+    fn test_page_batches_scalar() {
+        let values = Int32Array::from_iter_values(0..5);
+        let batch = RecordBatch::try_from_iter([("v", Arc::new(values) as ArrayRef)]).unwrap();
+        let props = WriterProperties::builder()
+            .set_data_page_row_count_limit(2)
+            .set_write_batch_size(2)
+            .build();
+
+        let mut buffer = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buffer, batch.schema(), Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let mut reader = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(buffer))
+            .unwrap()
+            .build()
+            .unwrap();
+        let first = reader.next_page_batch().unwrap().unwrap();
+        let second = reader.next_page_batch().unwrap().unwrap();
+        let third = reader.next_page_batch().unwrap().unwrap();
+        assert_eq!(first, batch.slice(0, 2));
+        assert_eq!(second, batch.slice(2, 2));
+        assert_eq!(third, batch.slice(4, 1));
+        assert!(reader.next_page_batch().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_page_batches_list_return_complete_rows() {
+        let mut list = ListBuilder::new(Int32Builder::new());
+        list.append_value([Some(1), Some(2)]);
+        list.append_value([Some(3)]);
+        list.append_value([Some(4), Some(5), Some(6)]);
+        let list = list.finish();
+        let batch = RecordBatch::try_from_iter([("l", Arc::new(list) as ArrayRef)]).unwrap();
+        let props = WriterProperties::builder()
+            .set_data_page_row_count_limit(1)
+            .set_write_batch_size(2)
+            .build();
+
+        let mut buffer = Vec::new();
+        let mut writer = ArrowWriter::try_new(&mut buffer, batch.schema(), Some(props)).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let mut reader = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(buffer))
+            .unwrap()
+            .build()
+            .unwrap();
+        let first = reader.next_page_batch().unwrap().unwrap();
+        let second = reader.next_page_batch().unwrap().unwrap();
+        assert_eq!(first, batch.slice(0, 1));
+        assert_eq!(second, batch.slice(1, 2));
+        assert!(reader.next_page_batch().unwrap().is_none());
     }
 
     #[test]

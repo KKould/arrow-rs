@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::arrow::array_reader::{ArrayReader, read_records, skip_records};
+use crate::arrow::array_reader::{ArrayReader, read_page_records, read_records, skip_records};
 use crate::arrow::record_reader::RecordReader;
 use crate::column::page::PageIterator;
 use crate::data_type::DataType;
@@ -77,6 +77,10 @@ where
 
     fn read_records(&mut self, batch_size: usize) -> Result<usize> {
         read_records(&mut self.record_reader, self.pages.as_mut(), batch_size)
+    }
+
+    fn read_page_records(&mut self) -> Result<usize> {
+        read_page_records(&mut self.record_reader, self.pages.as_mut())
     }
 
     fn consume_batch(&mut self) -> Result<ArrayRef> {

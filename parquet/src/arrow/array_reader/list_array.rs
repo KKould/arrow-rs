@@ -81,6 +81,10 @@ impl<OffsetSize: OffsetSizeTrait> ArrayReader for ListArrayReader<OffsetSize> {
         Ok(size)
     }
 
+    fn read_page_records(&mut self) -> Result<usize> {
+        self.item_reader.read_page_records()
+    }
+
     fn consume_batch(&mut self) -> Result<ArrayRef> {
         let next_batch_array = self.item_reader.consume_batch()?;
         if next_batch_array.is_empty() {

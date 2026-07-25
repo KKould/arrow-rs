@@ -68,6 +68,10 @@ impl<OffsetSize: OffsetSizeTrait> ArrayReader for ListViewArrayReader<OffsetSize
         self.inner.read_records(batch_size)
     }
 
+    fn read_page_records(&mut self) -> Result<usize> {
+        self.inner.read_page_records()
+    }
+
     fn consume_batch(&mut self) -> Result<ArrayRef> {
         let array = self.inner.consume_batch()?;
         if array.is_empty() {

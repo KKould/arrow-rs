@@ -82,6 +82,25 @@ impl ArrayReader for StructArrayReader {
         Ok(read.unwrap_or(0))
     }
 
+    fn read_page_records(&mut self) -> Result<usize> {
+        let mut read = None;
+        for child in self.children.iter_mut() {
+            let child_read = child.read_page_records()?;
+            match read {
+                Some(expected) if expected != child_read => {
+                    return Err(general_err!(
+                        "StructArrayReader out of sync in read_page_records, expected {} read, got {}",
+                        expected,
+                        child_read
+                    ));
+                }
+                None => read = Some(child_read),
+                _ => {}
+            }
+        }
+        Ok(read.unwrap_or(0))
+    }
+
     /// Consume struct records.
     ///
     /// Definition levels of struct array is calculated as following:

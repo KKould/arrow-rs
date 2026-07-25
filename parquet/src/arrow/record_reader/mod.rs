@@ -127,6 +127,32 @@ where
         Ok(records_read)
     }
 
+    /// Reads complete records while exhausting the current physical data page.
+    ///
+    /// If the final record continues into a later page, decoding advances only far enough to
+    /// close that record. A subsequent call then exhausts the remainder of that later page.
+    pub fn read_records_from_page(&mut self) -> Result<usize> {
+        let Some(column_reader) = self.column_reader.as_ref() else {
+            return Ok(0);
+        };
+        let loaded_pages = column_reader.data_pages_read();
+        let target_page =
+            loaded_pages + usize::from(loaded_pages == 0 || column_reader.current_page_exhausted());
+        let start = self.num_records;
+
+        loop {
+            let read = self.read_one_batch(1)?;
+            let column_reader = self.column_reader.as_ref().unwrap();
+            if read == 0
+                || column_reader.data_pages_read() > target_page
+                || (column_reader.data_pages_read() == target_page
+                    && column_reader.current_page_exhausted())
+            {
+                return Ok(self.num_records - start);
+            }
+        }
+    }
+
     /// Try to skip the next `num_records` rows
     ///
     /// # Returns

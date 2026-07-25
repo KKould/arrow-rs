@@ -107,6 +107,14 @@ pub trait ArrayReader: Send {
     /// pages is exhausted.
     fn read_records(&mut self, batch_size: usize) -> Result<usize>;
 
+    /// Reads complete records paced by the next physical data page.
+    ///
+    /// This is intended for single-leaf projections. Nested wrappers delegate to their child,
+    /// while struct readers require every projected child to produce the same row count.
+    fn read_page_records(&mut self) -> Result<usize> {
+        self.read_records(usize::MAX)
+    }
+
     /// Consume all currently stored buffer data
     /// into an arrow array and return it.
     fn consume_batch(&mut self) -> Result<ArrayRef>;
@@ -208,6 +216,25 @@ where
         }
     }
     Ok(records_read)
+}
+
+fn read_page_records<V, CV>(
+    record_reader: &mut GenericRecordReader<V, CV>,
+    pages: &mut dyn PageIterator,
+) -> Result<usize>
+where
+    V: ValuesBuffer,
+    CV: ColumnValueDecoder<Buffer = V>,
+{
+    loop {
+        if record_reader.read_records_from_page()? != 0 {
+            return Ok(record_reader.num_records());
+        }
+        match pages.next() {
+            Some(page_reader) => record_reader.set_page_reader(page_reader?)?,
+            None => return Ok(record_reader.num_records()),
+        }
+    }
 }
 
 /// Uses `record_reader` to skip up to `batch_size` records from `pages`

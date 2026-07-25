@@ -257,9 +257,49 @@ impl<'a> ArrayReaderBuilder<'a> {
                 ))))
             }
             (None, None) => Ok(None),
-            _ => Err(general_err!(
-                "partial projection of MapArray is not supported"
-            )),
+            (key_reader, value_reader) => {
+                let (reader, projected_field) = match (key_reader, value_reader) {
+                    (Some(reader), None) => (reader, 0),
+                    (None, Some(reader)) => (reader, 1),
+                    _ => unreachable!(),
+                };
+                let element = match &field.arrow_type {
+                    DataType::Map(element, _) => element,
+                    _ => unreachable!("expected map type"),
+                };
+                let fields = match element.data_type() {
+                    DataType::Struct(fields) => fields,
+                    _ => unreachable!("expected struct with two fields"),
+                };
+                let child_field = fields[projected_field]
+                    .as_ref()
+                    .clone()
+                    .with_data_type(reader.get_data_type().clone());
+                let projected_element = Arc::new(
+                    element
+                        .as_ref()
+                        .clone()
+                        .with_data_type(DataType::Struct(Fields::from(vec![child_field]))),
+                );
+                let struct_reader = StructArrayReader::new(
+                    projected_element.data_type().clone(),
+                    vec![reader],
+                    if field.nullable {
+                        field.def_level + 2
+                    } else {
+                        field.def_level + 1
+                    },
+                    field.rep_level + 1,
+                    false,
+                );
+                Ok(Some(Box::new(ListArrayReader::<i32>::new(
+                    Box::new(struct_reader),
+                    DataType::List(projected_element),
+                    field.def_level,
+                    field.rep_level,
+                    field.nullable,
+                ))))
+            }
         }
     }
 

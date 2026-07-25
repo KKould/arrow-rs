@@ -93,6 +93,10 @@ impl ArrayReader for MapArrayReader {
         self.reader.read_records(batch_size)
     }
 
+    fn read_page_records(&mut self) -> Result<usize> {
+        self.reader.read_page_records()
+    }
+
     fn consume_batch(&mut self) -> Result<ArrayRef> {
         // A MapArray is just a ListArray with a StructArray child
         // we can therefore just alter the ArrayData

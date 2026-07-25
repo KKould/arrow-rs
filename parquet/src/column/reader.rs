@@ -126,6 +126,9 @@ pub struct GenericColumnReader<R, D, V> {
     /// True if the end of the current data page denotes the end of a record
     has_record_delimiter: bool,
 
+    /// Number of data pages loaded by this reader.
+    data_pages_read: usize,
+
     /// The decoder for the definition levels if any
     def_level_decoder: Option<D>,
 
@@ -182,6 +185,7 @@ where
             num_decoded_values: 0,
             values_decoder,
             has_record_delimiter: false,
+            data_pages_read: 0,
         }
     }
 
@@ -430,6 +434,7 @@ where
                         } => {
                             self.num_buffered_values = num_values as _;
                             self.num_decoded_values = 0;
+                            self.data_pages_read += 1;
 
                             let max_rep_level = self.descr.max_rep_level();
                             let max_def_level = self.descr.max_def_level();
@@ -499,6 +504,7 @@ where
 
                             self.num_buffered_values = num_values as _;
                             self.num_decoded_values = 0;
+                            self.data_pages_read += 1;
 
                             // DataPage v2 only supports RLE encoding for repetition
                             // levels
@@ -539,6 +545,16 @@ where
                 }
             }
         }
+    }
+
+    /// Returns the number of data pages loaded by this reader.
+    pub(crate) fn data_pages_read(&self) -> usize {
+        self.data_pages_read
+    }
+
+    /// Returns whether the current data page has been fully decoded.
+    pub(crate) fn current_page_exhausted(&self) -> bool {
+        self.num_buffered_values != 0 && self.num_buffered_values == self.num_decoded_values
     }
 
     /// Check whether there is more data to read from this column,
