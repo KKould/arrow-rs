@@ -621,17 +621,13 @@ mod lz4_raw_codec {
                 }
             };
             output_buf.resize(offset + required_len, 0);
-            match lz4_flex::block::decompress_into(input_buf, &mut output_buf[offset..]) {
-                Ok(n) => {
-                    if n != required_len {
-                        return Err(ParquetError::General(
-                            "LZ4RawCodec uncompress_size is not the expected one".into(),
-                        ));
-                    }
-                    Ok(n)
-                }
-                Err(e) => Err(ParquetError::External(Box::new(e))),
+            let n = decompress_block(input_buf, &mut output_buf[offset..])?;
+            if n != required_len {
+                return Err(ParquetError::General(
+                    "LZ4RawCodec uncompress_size is not the expected one".into(),
+                ));
             }
+            Ok(n)
         }
 
         fn compress(&mut self, input_buf: &[u8], output_buf: &mut Vec<u8>) -> Result<()> {
@@ -646,6 +642,19 @@ mod lz4_raw_codec {
                 Err(e) => Err(ParquetError::External(Box::new(e))),
             }
         }
+    }
+
+    /// Decompresses one LZ4 block into `output`, which has the exact uncompressed size.
+    #[cfg(feature = "lz4-native")]
+    fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
+        lz4_native::block::decompress_to_buffer(input, Some(output.len() as i32), output)
+            .map_err(|e| ParquetError::External(Box::new(e)))
+    }
+
+    #[cfg(not(feature = "lz4-native"))]
+    fn decompress_block(input: &[u8], output: &mut [u8]) -> Result<usize> {
+        lz4_flex::block::decompress_into(input, output)
+            .map_err(|e| ParquetError::External(Box::new(e)))
     }
 }
 #[cfg(any(feature = "lz4", test))]

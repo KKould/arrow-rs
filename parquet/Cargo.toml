@@ -58,6 +58,7 @@ brotli = { version = "8.0", default-features = false, features = ["std"], option
 # To use `flate2` you must enable either the `flate2-zlib-rs` or `flate2-rust_backened` backends
 flate2 = { version = "1.1", default-features = false, optional = true }
 lz4_flex = { version = "0.13", default-features = false, features = ["std", "frame"], optional = true }
+lz4-native = { package = "lz4", version = "1.28", optional = true }
 zstd = { version = "0.13", optional = true, default-features = false }
 chrono = { workspace = true }
 num-bigint = { version = "0.4", default-features = false }
@@ -103,6 +104,8 @@ all-features = true
 default = ["arrow", "snap", "brotli", "flate2-zlib-rs", "lz4", "zstd", "base64", "simdutf8"]
 # Enable lz4
 lz4 = ["lz4_flex"]
+# Use the C LZ4 library for the LZ4_RAW codec (about 1.4x faster than lz4_flex)
+lz4-native = ["lz4", "dep:lz4-native"]
 # Enable arrow reader/writer APIs
 arrow = ["base64", "arrow-array", "arrow-buffer", "arrow-data", "arrow-schema", "arrow-select", "arrow-ipc"]
 # Enable support for arrow canonical extension types
